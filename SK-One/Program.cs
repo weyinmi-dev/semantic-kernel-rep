@@ -1,55 +1,44 @@
-﻿using System.Reflection.Metadata;
-using HandlebarsDotNet;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.PromptTemplates.Handlebars;
+using Microsoft.SemanticKernel.ChatCompletion;
 
-var modelId = "";
-var endPoint = "";
-var apiKey = "";
+IConfiguration config = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                .Build();
 
-var builder = Kernel.CreateBuilder().AddAzureOpenAIChatCompletion(modelId, endPoint, apiKey);
-var kernel = builder.Build();
+var modelId = config["GoogleAI:Gemini:ModelId"];
+var apiKey = config["GoogleAI:ApiKey"];
 
-var result = await kernel.InvokePromptAsync("Give me a list of 10 breakfast foods with eggs and cheese");
-Console.WriteLine(result);
-
-string city = "Rome";
-var prompt = "I'm visiting {{$city}}. What are some activities I should do today?";
-
-var activitiesFunction = kernel.CreateFunctionFromPrompt(prompt);
-var arguments = new KernelArguments { ["city"] = city };
-
-// InvokeAsync on the KernelFunction object
-var resultII = await activitiesFunction.InvokeAsync(kernel, arguments);
-Console.WriteLine(resultII);
-
-// InvokeAsync on the kernel object
-resultII = await kernel.InvokeAsync(activitiesFunction, arguments);
-Console.WriteLine(resultII);
-
-const string HandlebarsTemplate = """
-    <message role="system">You are an AI assistant designed to help with image recognition tasks.</message>
-    <message role="user">
-        <text>{{request}}</text>
-        <image>{{imageData}}</image>
-    </message>
-    """;
-
-var templateFactory = new HandlebarsPromptTemplateFactory();
-var promptTemplateConfig = new PromptTemplateConfig()
+if (string.IsNullOrWhiteSpace(modelId))
 {
-    Template = HandlebarsTemplate,
-    TemplateFormat = "handlebars",
-    Name = "Vision_Chat_Prompt",
-};
+    throw new InvalidOperationException("Missing configuration value: GoogleAI:Gemini:ModelId");
+}
 
-// Create a function from the Handlebars template configuration
-var function = kernel.CreateFunctionFromPrompt(promptTemplateConfig, templateFactory);
-
-var argumentsII = new KernelArguments(new Dictionary<string, object?>
+if (string.IsNullOrWhiteSpace(apiKey))
 {
-    {"request", "Describe this image"},
-    {"imageData", "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAAXNSR0IArs4c6QAAACVJREFUKFNj/KTO/J+BCMA4iBUyQX1A0I10VAizCj1oMdyISyEAFoQbHwTcuS8AAAAASUVORK5CYII="}
-});
+    throw new InvalidOperationException("Missing configuration value: GoogleAI:ApiKey");
+}
 
-var response = await kernel.InvokeAsync(function, argumentsII);
+var builder = Kernel.CreateBuilder();
+builder.AddGoogleAIGeminiChatCompletion(modelId, apiKey);
+
+Kernel kernel = builder.Build();
+
+//Get reference to chat completion service
+var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
+
+while (true)
+{
+    //Get input from user
+    Console.Write("\nEnter your prompt: ");
+    var prompt = Console.ReadLine();
+
+    //Exit if prompt is null or empty
+    if (string.IsNullOrEmpty(prompt))
+        break;
+
+    //Get response from chat completion service
+    var response = await chatCompletionService.GetChatMessageContentAsync(prompt);
+    Console.WriteLine(response);
+}
